@@ -2,9 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Each user can only read and write their own profile
+    // Users can read their own profile and create it (on sign-up), but never modify it.
+    // Preventing writes blocks a child from changing their own role field to 'parent'.
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
     }
 
     match /families/{familyId} {
@@ -32,7 +34,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent'
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
 
-        // Parent can update anything; children can only update weeklyCompletions
+        // Parent can update anything; children can only update weeklyCompletions on their own chores
         allow update: if request.auth != null && (
           (
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent'
@@ -40,6 +42,7 @@ service cloud.firestore {
           ) || (
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'child'
             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kidId == resource.data.kidId
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['weeklyCompletions'])
           )
         );
