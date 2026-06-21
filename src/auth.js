@@ -1,76 +1,82 @@
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as fbSignOut,
-} from 'firebase/auth'
-import { initializeApp, deleteApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore'
-import { auth, db, firebaseConfig } from './firebase'
+import { supabase } from './supabase'
 
 // ── Parent sign-in ────────────────────────────────────────────────────────────
 export async function signInUser(email, password) {
-  const { user } = await signInWithEmailAndPassword(auth, email, password)
-  const snap = await getDoc(doc(db, 'users', user.uid))
-  if (!snap.exists()) throw new Error('Account not found. Please sign up.')
-  return { uid: user.uid, ...snap.data() }
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) throw error
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user.id)
+    .single()
+
+  if (profileError || !profile) throw new Error('Account not found. Please sign up.')
+
+  return {
+    uid:      data.user.id,
+    name:     profile.name,
+    role:     profile.role,
+    familyId: profile.family_id,
+    kidId:    profile.kid_id,
+  }
 }
 
-// ── Parent sign-up — creates their account + family doc ──────────────────────
+// ── Parent sign-up — creates their account, family, and profile ───────────────
 export async function signUpUser(email, password, name) {
-  const { user } = await createUserWithEmailAndPassword(auth, email, password)
-  const familyId = user.uid
+  const { data, error } = await supabase.auth.signUp({ email, password })
+  if (error) throw error
 
-  await setDoc(doc(db, 'users', user.uid), {
-    role: 'parent',
-    familyId,
-    name,
-  })
+  const uid      = data.user.id
+  const familyId = uid  // family ID == parent UID, same pattern as before
 
-  await setDoc(doc(db, 'families', familyId), {
-    parentUid: user.uid,
-    kids: [],
-  })
+  const { error: familyError } = await supabase
+    .from('families')
+    .insert({ id: familyId, parent_uid: uid })
+  if (familyError) throw familyError
 
-  return { uid: user.uid, role: 'parent', familyId, name }
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({ id: uid, name, role: 'parent', family_id: familyId })
+  if (profileError) throw profileError
+
+  return { uid, name, role: 'parent', familyId, kidId: null }
 }
 
-// ── Sign out ─────────────────────────────────────────────────────────────────
+// ── Sign out ──────────────────────────────────────────────────────────────────
 export async function signOut() {
-  await fbSignOut(auth)
+  await supabase.auth.signOut()
 }
 
-// ── Create a child account without logging the parent out ────────────────────
-// Uses a secondary Firebase app instance so the parent session is untouched.
+// ── Create a child account without logging the parent out ─────────────────────
+// Calls a Netlify server function that uses the Supabase service role key.
 export async function createChildLogin(email, password, familyId, kidId, kidName) {
-  const secondaryApp  = initializeApp(firebaseConfig, `child-setup-${Date.now()}`)
-  const secondaryAuth = getAuth(secondaryApp)
-  const secondaryDb   = getFirestore(secondaryApp)
+  const { data: { session } } = await supabase.auth.getSession()
 
-  try {
-    const { user } = await createUserWithEmailAndPassword(secondaryAuth, email, password)
-    await setDoc(doc(secondaryDb, 'users', user.uid), {
-      role: 'child',
-      familyId,
-      kidId,
-      name: kidName,
-    })
-  } finally {
-    await deleteApp(secondaryApp)
+  const res = await fetch('/.netlify/functions/create-child-user', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ email, password, familyId, kidId, kidName }),
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || 'Failed to create child account.')
   }
 }
 
-// ── Human-readable Firebase error messages ────────────────────────────────────
-export function friendlyError(code) {
+// ── Human-readable error messages ─────────────────────────────────────────────
+export function friendlyError(message) {
   const map = {
-    'auth/invalid-email':          'Invalid email address.',
-    'auth/user-not-found':         'No account found with that email.',
-    'auth/wrong-password':         'Incorrect password.',
-    'auth/invalid-credential':     'Incorrect email or password.',
-    'auth/email-already-in-use':   'That email is already registered.',
-    'auth/weak-password':          'Password must be at least 6 characters.',
-    'auth/too-many-requests':      'Too many attempts. Please try again later.',
-    'auth/network-request-failed': 'Network error. Check your connection.',
+    'Invalid login credentials':                       'Incorrect email or password.',
+    'User already registered':                         'That email is already registered.',
+    'Password should be at least 6 characters':        'Password must be at least 6 characters.',
+    'Unable to validate email address: invalid format':'Invalid email address.',
+    'Email rate limit exceeded':                       'Too many attempts. Please try again later.',
+    'Network request failed':                          'Network error. Check your connection.',
   }
-  return map[code] || 'Something went wrong. Please try again.'
+  return map[message] || message || 'Something went wrong. Please try again.'
 }

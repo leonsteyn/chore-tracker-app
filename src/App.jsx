@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, db } from './firebase'
+import { supabase } from './supabase'
 import Login from './Login'
 import ParentDashboard from './ParentDashboard'
 import ChildDashboard from './ChildDashboard'
@@ -11,25 +9,37 @@ export default function App() {
   const [user, setUser]       = useState(null)  // { uid, role, familyId, kidId?, name }
 
   useEffect(() => {
-    return onAuthStateChanged(auth, async firebaseUser => {
-      if (!firebaseUser) {
-        setUser(null)
-        setLoading(false)
-        return
-      }
+    async function loadUser(session) {
+      if (!session) { setUser(null); setLoading(false); return }
       try {
-        const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
-        setUser(snap.exists() ? { uid: firebaseUser.uid, ...snap.data() } : null)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single()
+        setUser(profile ? {
+          uid:      session.user.id,
+          name:     profile.name,
+          role:     profile.role,
+          familyId: profile.family_id,
+          kidId:    profile.kid_id,
+        } : null)
       } catch {
         setUser(null)
       }
       setLoading(false)
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      loadUser(session)
     })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   if (loading) return <Spinner />
 
-  if (!user)                return <Login onLogin={setUser} />
+  if (!user)                  return <Login onLogin={setUser} />
   if (user.role === 'parent') return <ParentDashboard user={user} onSignOut={() => setUser(null)} />
   if (user.role === 'child')  return <ChildDashboard  user={user} onSignOut={() => setUser(null)} />
 

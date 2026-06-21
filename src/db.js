@@ -1,84 +1,130 @@
-import {
-  doc, collection,
-  setDoc, updateDoc, addDoc, deleteDoc,
-  onSnapshot, getDocs,
-  arrayUnion, writeBatch, runTransaction,
-} from 'firebase/firestore'
-import { db } from './firebase'
+import { supabase } from './supabase'
 
 // ── Real-time listeners ───────────────────────────────────────────────────────
+
 export function subscribeToFamily(familyId, cb) {
-  return onSnapshot(doc(db, 'families', familyId), snap => {
-    if (snap.exists()) cb({ id: snap.id, ...snap.data() })
-  })
+  async function fetch() {
+    const { data } = await supabase
+      .from('kids')
+      .select('id, name, color, email')
+      .eq('family_id', familyId)
+      .order('id')
+    cb({ id: familyId, kids: data || [] })
+  }
+
+  fetch()
+
+  const channel = supabase
+    .channel(`family-${familyId}`)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'kids',
+      filter: `family_id=eq.${familyId}`,
+    }, fetch)
+    .subscribe()
+
+  return () => supabase.removeChannel(channel)
 }
 
 export function subscribeToChores(familyId, cb) {
-  return onSnapshot(
-    collection(db, 'families', familyId, 'chores'),
-    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-  )
+  async function fetch() {
+    const { data: choresData } = await supabase
+      .from('chores')
+      .select('*')
+      .eq('family_id', familyId)
+
+    if (!choresData?.length) { cb([]); return }
+
+    const { data: completions } = await supabase
+      .from('chore_completions')
+      .select('chore_id, week_key, day_of_week')
+      .eq('family_id', familyId)
+
+    // Build weeklyCompletions map to match the shape the rest of the app expects
+    const byChore = {}
+    for (const c of (completions || [])) {
+      if (!byChore[c.chore_id])           byChore[c.chore_id] = {}
+      if (!byChore[c.chore_id][c.week_key]) byChore[c.chore_id][c.week_key] = []
+      byChore[c.chore_id][c.week_key].push(c.day_of_week)
+    }
+
+    cb(choresData.map(c => ({
+      id:                c.id,
+      kidId:             c.kid_id,
+      text:              c.text,
+      frequency:         c.frequency,
+      weeklyCompletions: byChore[c.id] || {},
+    })))
+  }
+
+  fetch()
+
+  const channel = supabase
+    .channel(`chores-${familyId}`)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'chores',
+      filter: `family_id=eq.${familyId}`,
+    }, fetch)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'chore_completions',
+      filter: `family_id=eq.${familyId}`,
+    }, fetch)
+    .subscribe()
+
+  return () => supabase.removeChannel(channel)
 }
 
 // ── Kid operations ────────────────────────────────────────────────────────────
+
 export async function addKid(familyId, kid) {
-  await updateDoc(doc(db, 'families', familyId), { kids: arrayUnion(kid) })
+  await supabase.from('kids').insert({
+    id:        kid.id,
+    family_id: familyId,
+    name:      kid.name,
+    color:     kid.color,
+  })
 }
 
-// Stores the child's login email on the kid record so the parent can see it.
 export async function setKidEmail(familyId, currentKids, kidId, email) {
-  const updated = currentKids.map(k => k.id === kidId ? { ...k, email } : k)
-  await updateDoc(doc(db, 'families', familyId), { kids: updated })
+  // currentKids not needed with a relational table — kept for API compatibility
+  await supabase.from('kids').update({ email }).eq('id', kidId)
 }
 
 export async function deleteKid(familyId, kidId, currentKids, currentChores) {
-  const batch = writeBatch(db)
-
-  // Remove kid from the kids array
-  batch.update(doc(db, 'families', familyId), {
-    kids: currentKids.filter(k => k.id !== kidId),
-  })
-
-  // Delete all chores belonging to this kid
-  currentChores
-    .filter(c => c.kidId === kidId)
-    .forEach(c => batch.delete(doc(db, 'families', familyId, 'chores', c.id)))
-
-  await batch.commit()
+  // Foreign key CASCADE handles deleting the kid's chores and completions
+  await supabase.from('kids').delete().eq('id', kidId)
 }
 
 // ── Chore operations ──────────────────────────────────────────────────────────
+
 export async function addChore(familyId, chore) {
-  await addDoc(collection(db, 'families', familyId, 'chores'), {
-    kidId: chore.kidId,
-    text:  chore.text,
+  await supabase.from('chores').insert({
+    family_id: familyId,
+    kid_id:    chore.kidId,
+    text:      chore.text,
     frequency: chore.frequency,
-    weeklyCompletions: {},
   })
 }
 
 export async function deleteChore(familyId, choreId) {
-  await deleteDoc(doc(db, 'families', familyId, 'chores', choreId))
+  await supabase.from('chores').delete().eq('id', choreId)
 }
 
-// Atomic toggle — safe when two devices tick simultaneously
+// Atomic toggle via a Postgres function — safe when two devices tap simultaneously
 export async function toggleChoreDay(familyId, choreId, day, weekKey) {
-  const ref = doc(db, 'families', familyId, 'chores', choreId)
-  await runTransaction(db, async tx => {
-    const snap = await tx.get(ref)
-    const existing = ((snap.data()?.weeklyCompletions || {})[weekKey] || [])
-    const idx = existing.indexOf(day)
-    const updated = idx === -1
-      ? [...existing, day]
-      : existing.filter(d => d !== day)
-    tx.update(ref, { [`weeklyCompletions.${weekKey}`]: updated })
+  await supabase.rpc('toggle_chore_day', {
+    p_chore_id:    choreId,
+    p_family_id:   familyId,
+    p_week_key:    weekKey,
+    p_day_of_week: day,
   })
 }
 
 // ── Reset a week ──────────────────────────────────────────────────────────────
+
 export async function resetWeek(familyId, weekKey) {
-  const snap  = await getDocs(collection(db, 'families', familyId, 'chores'))
-  const batch = writeBatch(db)
-  snap.forEach(d => batch.update(d.ref, { [`weeklyCompletions.${weekKey}`]: [] }))
-  await batch.commit()
+  await supabase
+    .from('chore_completions')
+    .delete()
+    .eq('family_id', familyId)
+    .eq('week_key', weekKey)
 }

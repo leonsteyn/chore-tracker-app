@@ -19,7 +19,7 @@ export default function Login({ onLogin }) {
         : await signUpUser(email, password, name.trim())
       onLogin(userData)
     } catch (err) {
-      setError(friendlyError(err.code))
+      setError(friendlyError(err.message))
     } finally {
       setBusy(false)
     }
