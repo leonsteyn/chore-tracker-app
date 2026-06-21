@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Each user can only read and write their own profile
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /families/{familyId} {
+
+      // Parent creates their own family doc on sign-up (familyId == their uid)
+      allow create: if request.auth != null && familyId == request.auth.uid;
+
+      // Any member of the family can read
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
+
+      // Only the parent can update or delete the family doc
+      allow update, delete: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
+
+      match /chores/{choreId} {
+
+        // Any family member can read chores
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
+
+        // Only parent can add or delete chores
+        allow create, delete: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent'
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
+
+        // Parent can update anything; children can only update weeklyCompletions
+        allow update: if request.auth != null && (
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent'
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId
+          ) || (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'child'
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['weeklyCompletions'])
+          )
+        );
+      }
+    }
+  }
+}
