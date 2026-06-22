@@ -6,7 +6,7 @@ export function subscribeToFamily(familyId, cb) {
   async function fetch() {
     const { data } = await supabase
       .from('kids')
-      .select('id, name, color, email')
+      .select('id, name, color, username')
       .eq('family_id', familyId)
       .order('id')
     cb({ id: familyId, kids: data || [] })
@@ -42,7 +42,7 @@ export function subscribeToChores(familyId, cb) {
     // Build weeklyCompletions map to match the shape the rest of the app expects
     const byChore = {}
     for (const c of (completions || [])) {
-      if (!byChore[c.chore_id])           byChore[c.chore_id] = {}
+      if (!byChore[c.chore_id])             byChore[c.chore_id] = {}
       if (!byChore[c.chore_id][c.week_key]) byChore[c.chore_id][c.week_key] = []
       byChore[c.chore_id][c.week_key].push(c.day_of_week)
     }
@@ -84,13 +84,12 @@ export async function addKid(familyId, kid) {
   })
 }
 
-export async function setKidEmail(familyId, currentKids, kidId, email) {
-  // currentKids not needed with a relational table — kept for API compatibility
-  await supabase.from('kids').update({ email }).eq('id', kidId)
+export async function setKidUsername(familyId, kidId, username) {
+  await supabase.from('kids').update({ username }).eq('id', kidId)
 }
 
 export async function deleteKid(familyId, kidId, currentKids, currentChores) {
-  // Foreign key CASCADE handles deleting the kid's chores and completions
+  // CASCADE on kids → chores → chore_completions and kids → child_usernames handles cleanup
   await supabase.from('kids').delete().eq('id', kidId)
 }
 

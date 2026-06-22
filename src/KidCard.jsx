@@ -42,11 +42,11 @@ export default function KidCard({
             </span>
           )}
           <button
-            className={`setup-btn ${kid.email ? 'setup-btn-done' : ''}`}
-            title={kid.email ? `Login: ${kid.email}` : 'Set up iPad login'}
+            className={`setup-btn ${kid.username ? 'setup-btn-done' : ''}`}
+            title={kid.username ? `Username: ${kid.username}` : 'Set up iPad login'}
             onClick={() => onSetupLogin(kid.id, kid.name)}
           >
-            {kid.email ? '📱 ✓' : '📱 Set up login'}
+            {kid.username ? '📱 ✓' : '📱 Set up login'}
           </button>
           <button className="icon-btn danger" onClick={() => onDeleteKid(kid.id)} title="Remove child">✕</button>
         </div>

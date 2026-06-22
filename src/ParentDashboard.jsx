@@ -3,7 +3,7 @@ import { signOut } from './auth'
 import { createChildLogin, friendlyError } from './auth'
 import {
   subscribeToFamily, subscribeToChores,
-  addKid, deleteKid, addChore, deleteChore, resetWeek, setKidEmail,
+  addKid, deleteKid, addChore, deleteChore, resetWeek, setKidUsername,
 } from './db'
 import { COLORS, getMondayKey, weekLabel, shiftWeek } from './constants'
 import KidCard from './KidCard'
@@ -13,12 +13,12 @@ export default function ParentDashboard({ user, onSignOut }) {
   const [chores, setChores]           = useState([])
   const [viewingWeek, setViewingWeek] = useState(getMondayKey())
   const [newKidName, setNewKidName]   = useState('')
-  const [loginModal, setLoginModal]   = useState(null) // { kidId, kidName, step:'form'|'done', creds }
-  const [resetModal, setResetModal]   = useState(false)
-  const [loginError, setLoginError]   = useState('')
-  const [loginBusy, setLoginBusy]     = useState(false)
-  const [childEmail, setChildEmail]   = useState('')
-  const [childPass, setChildPass]     = useState('')
+  const [loginModal, setLoginModal]       = useState(null) // { kidId, kidName, step:'form'|'done', creds }
+  const [resetModal, setResetModal]       = useState(false)
+  const [loginError, setLoginError]       = useState('')
+  const [loginBusy, setLoginBusy]         = useState(false)
+  const [childUsername, setChildUsername] = useState('')
+  const [childPass, setChildPass]         = useState('')
 
   const CURRENT_WEEK = getMondayKey()
   const isPast       = viewingWeek < CURRENT_WEEK
@@ -48,7 +48,7 @@ export default function ParentDashboard({ user, onSignOut }) {
   // ── Child login setup ─────────────────────────────────────────────────────
   function openLoginModal(kidId, kidName) {
     setLoginModal({ kidId, kidName, step: 'form' })
-    setChildEmail('')
+    setChildUsername('')
     setChildPass('')
     setLoginError('')
   }
@@ -59,11 +59,11 @@ export default function ParentDashboard({ user, onSignOut }) {
     setLoginBusy(true)
     setLoginError('')
     try {
-      await createChildLogin(childEmail, childPass, user.familyId, loginModal.kidId, loginModal.kidName)
-      await setKidEmail(user.familyId, family.kids, loginModal.kidId, childEmail)
-      setLoginModal({ ...loginModal, step: 'done', creds: { email: childEmail, password: childPass } })
+      await createChildLogin(childUsername, childPass, user.familyId, loginModal.kidId, loginModal.kidName)
+      await setKidUsername(user.familyId, loginModal.kidId, childUsername.trim().toLowerCase())
+      setLoginModal({ ...loginModal, step: 'done', creds: { username: childUsername.trim(), password: childPass } })
     } catch (err) {
-      setLoginError(friendlyError(err.code))
+      setLoginError(err.message)
     } finally {
       setLoginBusy(false)
     }
@@ -168,11 +168,11 @@ export default function ParentDashboard({ user, onSignOut }) {
           {loginModal.step === 'form' ? (
             <>
               <h2>Set up login for {loginModal.kidName}</h2>
-              <p>Create an email and password your child will use to sign in on their iPad.</p>
+              <p>Choose a username and password your child will use to sign in on their iPad. No email needed!</p>
               {loginError && <div className="alert-error">{loginError}</div>}
               <form onSubmit={handleCreateLogin} className="login-form">
-                <input className="field" type="email" placeholder="Child's email address"
-                  value={childEmail} onChange={e => setChildEmail(e.target.value)} required />
+                <input className="field" type="text" placeholder="Username (e.g. emma)"
+                  value={childUsername} onChange={e => setChildUsername(e.target.value)} required />
                 <input className="field" type="password" placeholder="Password (min 6 characters)"
                   value={childPass} onChange={e => setChildPass(e.target.value)} required minLength={6} />
                 <div className="modal-btns">
@@ -186,12 +186,12 @@ export default function ParentDashboard({ user, onSignOut }) {
           ) : (
             <>
               <h2>Login created! 🎉</h2>
-              <p>Share these credentials with <strong>{loginModal.kidName}</strong>:</p>
+              <p>Share these details with <strong>{loginModal.kidName}</strong>:</p>
               <div className="creds-box">
-                <div><span className="creds-label">Email</span><span className="creds-val">{loginModal.creds.email}</span></div>
+                <div><span className="creds-label">Username</span><span className="creds-val">{loginModal.creds.username}</span></div>
                 <div><span className="creds-label">Password</span><span className="creds-val">{loginModal.creds.password}</span></div>
               </div>
-              <p className="login-hint">On their iPad: open this app in Safari, sign in with these details, then tap <em>Share → Add to Home Screen</em>.</p>
+              <p className="login-hint">On their iPad: open this app in Safari, tap <em>Child sign in</em>, enter their username and password, then tap <em>Share → Add to Home Screen</em>.</p>
               <div className="modal-btns">
                 <button className="btn-primary" onClick={() => setLoginModal(null)}>Done</button>
               </div>
