@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { signOut } from './auth'
 import { subscribeToFamily, subscribeToChores, toggleChoreDay } from './db'
-import { FREQ, DAY_LABEL, getMondayKey, weekLabel, shiftWeek, choreProgress, cardProgress } from './constants'
+import { FREQ, DAY_LABEL, getMondayKey, weekLabel, shiftWeek, cardProgress } from './constants'
 
 const TODAY        = new Date().getDay()
 const CURRENT_WEEK = getMondayKey()
 
 export default function ChildDashboard({ user, onSignOut }) {
-  const [family, setFamily]           = useState(null)
-  const [allChores, setAllChores]     = useState([])
+  const [family, setFamily]       = useState(null)
+  const [allChores, setAllChores] = useState([])
   const [viewingWeek, setViewingWeek] = useState(CURRENT_WEEK)
 
   const isPast = viewingWeek < CURRENT_WEEK
@@ -94,19 +94,42 @@ export default function ChildDashboard({ user, onSignOut }) {
 }
 
 function ChildChoreItem({ chore, viewingWeek, familyId, accentColor }) {
-  const cfg           = FREQ[chore.frequency] || FREQ.once
-  const prog          = choreProgress(chore, viewingWeek)
-  const completedDays = (chore.weeklyCompletions || {})[viewingWeek] || []
+  const cfg = FREQ[chore.frequency] || FREQ.once
   const isCurrentWeek = viewingWeek === CURRENT_WEEK
 
+  // Optimistic local state — updates instantly on click, syncs from server when idle
+  const [completedDays, setCompletedDays] = useState(
+    () => (chore.weeklyCompletions || {})[viewingWeek] || []
+  )
+  const pending = useRef(0)
+
+  useEffect(() => {
+    if (pending.current === 0) {
+      setCompletedDays((chore.weeklyCompletions || {})[viewingWeek] || [])
+    }
+  }, [chore.weeklyCompletions, viewingWeek])
+
+  const done     = completedDays.filter(d => cfg.days.includes(d)).length
+  const complete = done >= cfg.target
+
+  function toggle(day) {
+    setCompletedDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    )
+    pending.current++
+    toggleChoreDay(familyId, chore.id, day, viewingWeek).finally(() => {
+      pending.current--
+    })
+  }
+
   return (
-    <div className={`child-chore-card ${prog.complete ? 'complete' : ''}`}>
+    <div className={`child-chore-card ${complete ? 'complete' : ''}`}>
       <div className="child-chore-top">
         <span className="child-chore-name">{chore.text}</span>
         <div className="chore-meta">
-          {prog.complete
+          {complete
             ? <span className="done-badge" style={{ background: accentColor }}>✓ Done</span>
-            : <span className={`freq-badge ${cfg.cls}`}>{cfg.label} · {prog.done}/{prog.target}</span>
+            : <span className={`freq-badge ${cfg.cls}`}>{cfg.label} · {done}/{cfg.target}</span>
           }
         </div>
       </div>
@@ -118,7 +141,7 @@ function ChildChoreItem({ chore, viewingWeek, familyId, accentColor }) {
             <div
               key={d}
               className={`day-tick ${checked ? 'checked' : ''} ${isToday ? 'today' : ''}`}
-              onClick={() => toggleChoreDay(familyId, chore.id, d, viewingWeek)}
+              onClick={() => toggle(d)}
               style={checked ? { '--tick-color': accentColor } : {}}
             >
               <div className="day-box">✓</div>

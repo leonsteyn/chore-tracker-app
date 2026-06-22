@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toggleChoreDay } from './db'
-import { FREQ, DAY_LABEL, getMondayKey, choreProgress, cardProgress } from './constants'
+import { FREQ, DAY_LABEL, getMondayKey, cardProgress } from './constants'
 
 const TODAY        = new Date().getDay()
 const CURRENT_WEEK = getMondayKey()
@@ -91,22 +91,41 @@ export default function KidCard({
 }
 
 function ChoreItem({ chore, viewingWeek, isCurrentWeek, familyId, onDelete }) {
-  const cfg  = FREQ[chore.frequency] || FREQ.once
-  const prog = choreProgress(chore, viewingWeek)
-  const completedDays = (chore.weeklyCompletions || {})[viewingWeek] || []
+  const cfg = FREQ[chore.frequency] || FREQ.once
+
+  // Optimistic local state — updates instantly on click, syncs from server when idle
+  const [completedDays, setCompletedDays] = useState(
+    () => (chore.weeklyCompletions || {})[viewingWeek] || []
+  )
+  const pending = useRef(0)
+
+  useEffect(() => {
+    if (pending.current === 0) {
+      setCompletedDays((chore.weeklyCompletions || {})[viewingWeek] || [])
+    }
+  }, [chore.weeklyCompletions, viewingWeek])
+
+  const done     = completedDays.filter(d => cfg.days.includes(d)).length
+  const complete = done >= cfg.target
 
   function toggle(day) {
-    toggleChoreDay(familyId, chore.id, day, viewingWeek)
+    setCompletedDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    )
+    pending.current++
+    toggleChoreDay(familyId, chore.id, day, viewingWeek).finally(() => {
+      pending.current--
+    })
   }
 
   return (
-    <div className={`chore-item ${prog.complete ? 'complete' : ''}`}>
+    <div className={`chore-item ${complete ? 'complete' : ''}`}>
       <div className="chore-header">
         <span className="chore-name">{chore.text}</span>
-        {prog.complete && <span className="done-mark">✓ Done</span>}
+        {complete && <span className="done-mark">✓ Done</span>}
         <div className="chore-meta">
           <span className={`freq-badge ${cfg.cls}`}>{cfg.label}</span>
-          <span className="chore-tally">{prog.complete ? '✓' : `${prog.done}/${prog.target}`}</span>
+          <span className="chore-tally">{complete ? '✓' : `${done}/${cfg.target}`}</span>
         </div>
         <button className="icon-btn" onClick={onDelete} title="Remove chore">✕</button>
       </div>
