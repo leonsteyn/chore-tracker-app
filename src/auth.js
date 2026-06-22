@@ -107,7 +107,7 @@ export async function createChildLogin(username, password, familyId, kidId, kidN
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    let message = 'Failed to create child account.'
+    let message = `Server error ${res.status}: ${text.slice(0, 200)}`
     try { message = JSON.parse(text).error || message } catch {}
     throw new Error(message)
   }
