@@ -65,6 +65,10 @@ export async function signUpUser(email, password, name) {
   const { data, error } = await supabase.auth.signUp({ email, password })
   if (error) throw error
 
+  if (!data.session) {
+    throw new Error('Please check your email and click the confirmation link before signing in.')
+  }
+
   const uid      = data.user.id
   const familyId = uid  // family ID == parent UID
 
@@ -102,8 +106,10 @@ export async function createChildLogin(username, password, familyId, kidId, kidN
   })
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || 'Failed to create child account.')
+    const text = await res.text().catch(() => '')
+    let message = 'Failed to create child account.'
+    try { message = JSON.parse(text).error || message } catch {}
+    throw new Error(message)
   }
 }
 
