@@ -1,6 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { WebSocket } from 'ws'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+})
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405 }
@@ -36,17 +44,16 @@ export const handler = async (event) => {
     { realtime: { transport: WebSocket } }
   )
 
-  // Idempotency — insert will fail silently if already sent for this kid+week
+  // Idempotency — insert fails if already sent for this kid+week
   const { error: insertError } = await supabaseAdmin
     .from('week_completions_notified')
     .insert({ kid_id: kidId, week_key: weekKey })
 
   if (insertError) {
-    // Unique constraint violation = already notified, nothing to do
     return { statusCode: 200, body: JSON.stringify({ alreadySent: true }) }
   }
 
-  // Look up the parent's email via the families table
+  // Get parent's email from Supabase Auth
   const { data: family } = await supabaseAdmin
     .from('families')
     .select('parent_uid')
@@ -61,18 +68,15 @@ export const handler = async (event) => {
     .eq('id', family.parent_uid)
     .single()
 
-  // Format the week range for the email subject
   const wed = new Date(weekKey + 'T12:00:00')
   const tue = new Date(wed)
   tue.setDate(wed.getDate() + 6)
   const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   const weekRange = `${fmt(wed)} – ${fmt(tue)}`
 
-  const resend = new Resend(process.env.RESEND_API_KEY)
-
-  await resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL,
-    to:   parentUser.email,
+  await transporter.sendMail({
+    from:    `Chore Tracker <${process.env.GMAIL_USER}>`,
+    to:      parentUser.email,
     subject: `🌟 ${kidName} finished all chores this week!`,
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
