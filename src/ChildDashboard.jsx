@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { signOut } from './auth'
-import { supabase } from './supabase'
 import { subscribeToFamily, subscribeToChores, toggleChoreDay } from './db'
 import { FREQ, DAY_LABEL, getWeekKey, weekLabel, shiftWeek, cardProgress } from './constants'
 
@@ -12,8 +11,7 @@ export default function ChildDashboard({ user, onSignOut }) {
   const [allChores, setAllChores] = useState([])
   const [viewingWeek, setViewingWeek] = useState(CURRENT_WEEK)
 
-  const isPast        = viewingWeek < CURRENT_WEEK
-  const prevAllDone   = useRef(false)
+  const isPast = viewingWeek < CURRENT_WEEK
 
   useEffect(() => {
     const unsubFamily = subscribeToFamily(user.familyId, setFamily)
@@ -25,15 +23,6 @@ export default function ChildDashboard({ user, onSignOut }) {
   const chores = allChores.filter(c => c.kidId === user.kidId)
   const { complete, total } = cardProgress(chores, viewingWeek)
   const allDone = total > 0 && complete === total
-
-  // Fire a parent email notification when the child completes their last chore.
-  // Server-side dedup prevents sending the same email twice for the same kid+week.
-  useEffect(() => {
-    if (allDone && !prevAllDone.current && viewingWeek === CURRENT_WEEK && kid) {
-      notifyParent(user, kid.name, viewingWeek)
-    }
-    prevAllDone.current = allDone
-  }, [allDone, viewingWeek, kid])
 
   if (!family || !kid) {
     return <div className="splash"><div className="splash-logo">✓</div><p>Loading…</p></div>
@@ -102,23 +91,6 @@ export default function ChildDashboard({ user, onSignOut }) {
       </main>
     </div>
   )
-}
-
-async function notifyParent(user, kidName, weekKey) {
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    await fetch('/.netlify/functions/notify-week-complete', {
-      method: 'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ kidId: user.kidId, familyId: user.familyId, weekKey, kidName }),
-    })
-  } catch {
-    // Best-effort — a failed notification should never interrupt the child's experience
-  }
 }
 
 function ChildChoreItem({ chore, viewingWeek, familyId, accentColor }) {
