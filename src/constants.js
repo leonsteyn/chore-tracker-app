@@ -1,10 +1,12 @@
 // ── Frequency config ─────────────────────────────────────────────────────────
+// Days are JS day-of-week indices ordered Wed → Tue to match the week boundary.
+// weekdays splits across the week: Wed/Thu/Fri first, then Mon/Tue at the end.
 export const FREQ = {
-  once:     { label: 'Once / week',    cls: 'freq-once',     target: 1, days: [1,2,3,4,5,6,0] },
-  twice:    { label: 'Twice / week',   cls: 'freq-twice',    target: 2, days: [1,2,3,4,5,6,0] },
-  three:    { label: '3 days / week',  cls: 'freq-three',    target: 3, days: [1,2,3,4,5,6,0] },
-  weekdays: { label: 'Every weekday',  cls: 'freq-weekdays', target: 5, days: [1,2,3,4,5] },
-  daily:    { label: 'Everyday',       cls: 'freq-daily',    target: 7, days: [1,2,3,4,5,6,0] },
+  once:     { label: 'Once / week',    cls: 'freq-once',     target: 1, days: [3,4,5,6,0,1,2] },
+  twice:    { label: 'Twice / week',   cls: 'freq-twice',    target: 2, days: [3,4,5,6,0,1,2] },
+  three:    { label: '3 days / week',  cls: 'freq-three',    target: 3, days: [3,4,5,6,0,1,2] },
+  weekdays: { label: 'Every weekday',  cls: 'freq-weekdays', target: 5, days: [3,4,5,1,2] },
+  daily:    { label: 'Everyday',       cls: 'freq-daily',    target: 7, days: [3,4,5,6,0,1,2] },
 }
 
 export const DAY_LABEL = { 0:'Sun', 1:'Mon', 2:'Tue', 3:'Wed', 4:'Thu', 5:'Fri', 6:'Sat' }
@@ -15,25 +17,28 @@ export const COLORS = [
 ]
 
 // ── Week helpers ──────────────────────────────────────────────────────────────
-export function getMondayKey(date = new Date()) {
+// Weeks run Wednesday → Tuesday. Returns the ISO date string of the Wednesday
+// that starts the week containing `date`.
+export function getWeekKey(date = new Date()) {
   const d = new Date(date)
   d.setHours(12, 0, 0, 0)
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  // (day + 4) % 7 gives days-since-last-Wednesday for any JS day index
+  d.setDate(d.getDate() - ((d.getDay() + 4) % 7))
   return d.toISOString().slice(0, 10)
 }
 
-export function weekLabel(mondayKey) {
-  const monday = new Date(mondayKey + 'T12:00:00')
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
+export function weekLabel(wednesdayKey) {
+  const wed = new Date(wednesdayKey + 'T12:00:00')
+  const tue = new Date(wed)
+  tue.setDate(wed.getDate() + 6)
   const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${fmt(monday)} – ${fmt(sunday)}`
+  return `${fmt(wed)} – ${fmt(tue)}`
 }
 
-export function shiftWeek(mondayKey, direction) {
-  const d = new Date(mondayKey + 'T12:00:00')
+export function shiftWeek(weekKey, direction) {
+  const d = new Date(weekKey + 'T12:00:00')
   d.setDate(d.getDate() + direction * 7)
-  return getMondayKey(d)
+  return getWeekKey(d)
 }
 
 // ── Progress helpers ──────────────────────────────────────────────────────────

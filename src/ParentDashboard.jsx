@@ -5,13 +5,13 @@ import {
   subscribeToFamily, subscribeToChores,
   addKid, deleteKid, addChore, deleteChore, resetWeek, setKidUsername,
 } from './db'
-import { COLORS, getMondayKey, weekLabel, shiftWeek } from './constants'
+import { COLORS, getWeekKey, weekLabel, shiftWeek } from './constants'
 import KidCard from './KidCard'
 
 export default function ParentDashboard({ user, onSignOut }) {
   const [family, setFamily]           = useState(null)
   const [chores, setChores]           = useState([])
-  const [viewingWeek, setViewingWeek] = useState(getMondayKey())
+  const [viewingWeek, setViewingWeek] = useState(getWeekKey())
   const [newKidName, setNewKidName]   = useState('')
   const [loginModal, setLoginModal]       = useState(null) // { kidId, kidName, step:'form'|'done', creds }
   const [resetModal, setResetModal]       = useState(false)
@@ -20,7 +20,7 @@ export default function ParentDashboard({ user, onSignOut }) {
   const [childUsername, setChildUsername] = useState('')
   const [childPass, setChildPass]         = useState('')
 
-  const CURRENT_WEEK = getMondayKey()
+  const CURRENT_WEEK = getWeekKey()
   const isPast       = viewingWeek < CURRENT_WEEK
 
   useEffect(() => {

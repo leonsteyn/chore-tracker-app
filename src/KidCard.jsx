@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { toggleChoreDay } from './db'
-import { FREQ, DAY_LABEL, getMondayKey, cardProgress } from './constants'
+import { FREQ, DAY_LABEL, getWeekKey, cardProgress } from './constants'
 
 const TODAY        = new Date().getDay()
-const CURRENT_WEEK = getMondayKey()
+const CURRENT_WEEK = getWeekKey()
 
 export default function KidCard({
   kid, chores, viewingWeek, familyId,

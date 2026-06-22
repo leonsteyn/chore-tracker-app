@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { signOut } from './auth'
 import { subscribeToFamily, subscribeToChores, toggleChoreDay } from './db'
-import { FREQ, DAY_LABEL, getMondayKey, weekLabel, shiftWeek, cardProgress } from './constants'
+import { FREQ, DAY_LABEL, getWeekKey, weekLabel, shiftWeek, cardProgress } from './constants'
 
 const TODAY        = new Date().getDay()
-const CURRENT_WEEK = getMondayKey()
+const CURRENT_WEEK = getWeekKey()
 
 export default function ChildDashboard({ user, onSignOut }) {
   const [family, setFamily]       = useState(null)
