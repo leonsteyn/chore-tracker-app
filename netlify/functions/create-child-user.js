@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { WebSocket } from 'ws'
 
 // Creates a child auth account without logging the parent out.
 // Accepts a username (no email needed). Generates an internal fake email
@@ -20,7 +21,7 @@ export const handler = async (event) => {
   const supabaseClient = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.VITE_SUPABASE_ANON_KEY,
-    { global: { headers: { Authorization: authHeader } } }
+    { global: { headers: { Authorization: authHeader } }, realtime: { transport: WebSocket } }
   )
 
   const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
@@ -46,7 +47,8 @@ export const handler = async (event) => {
   // Admin client — service role key bypasses RLS for account creation
   const supabaseAdmin = createClient(
     process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { realtime: { transport: WebSocket } }
   )
 
   // Check username is not already taken
